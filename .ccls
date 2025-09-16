@@ -1,0 +1,3 @@
+%gcc
+-I./include
+-I/usr/include
