@@ -43,7 +43,7 @@ SECTIONS
     ## place the stack ptr here at the beginning
     ## allocate 64KB for the initial stack
     ##
-    .  ALIGN(16);
+    . = ALIGN(16);
     . += 64K;
     __stack_top = .;
 

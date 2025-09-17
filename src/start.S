@@ -62,10 +62,27 @@ _start:
     ##
     bl      main
 
+.globl get_el
+
+get_el:
     ##
-    ## if main actually does happen to return
-    ## ...it shouldn't...but we halt the machine
+    ## read the CurrentEL reg
+    ## the EL is within bits 2:3
     ##
-.halt:
+    mrs x0, CurrentEL
+    ##
+    ## shift the val right by 2 bits to
+    ## isolate the EL num.
+    ##
+    lsr x0, x0, #2
+    ret
+
+.globl hang
+
+hang:
+    ##
+    ## enter inf loop is main rets
+    ## or if we need to halt
+    ##
     wfi
-    b       .halt
+    b       hang

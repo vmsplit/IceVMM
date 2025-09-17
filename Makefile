@@ -36,8 +36,8 @@ clean:
 
 run: all
 	qemu-system-aarch64 \
-	    -machine virt \
+	    -machine virt,virtualization=on \
 	    -cpu cortex-a57 \
-	    -m 1024 \
+	    -m 6144 \
 	    -nographic \
 	    -kernel $(TARGET_ELF)
