@@ -69,12 +69,12 @@ get_el:
     ## read the CurrentEL reg
     ## the EL is within bits 2:3
     ##
-    mrs x0, CurrentEL
+    mrs     x0, CurrentEL
     ##
     ## shift the val right by 2 bits to
     ## isolate the EL num.
     ##
-    lsr x0, x0, #2
+    lsr     x0, x0, #2
     ret
 
 .globl hang
@@ -86,3 +86,25 @@ hang:
     ##
     wfi
     b       hang
+
+
+##
+## C-callable funcs to write to sys regs
+##
+.globl __write_sctlr_el2
+
+__write_sctlr_el2:
+    msr     sctlr_el2, x0
+    ret
+
+.globl __write_hcr_el2
+
+__write_hcr_el2:
+    msr     hcr_el2, x0
+    ret
+
+.globl __write_cptr_el2
+
+__write_cptr_el2:
+    msr     cptr_el2, x0
+    ret

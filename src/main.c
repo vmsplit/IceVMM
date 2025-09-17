@@ -6,6 +6,13 @@
 /* prototypes for assembly funcs */
 unsigned long get_el(void);
 void hang(void);
+void __write_hcr_el2  (uint64_t val);
+void __write_cptr_el2 (uint64_t val);
+void __write_sctlr_el2(uint64_t val);
+
+/* HCR_EL2 bits 
+    `-> HCR_EL2_RW_BIT: set EL1 to be arm64 */
+#define HCR_EL2_RW_BIT (1UL << 31)
 
 static void uart_init(void) { }
 
@@ -56,11 +63,27 @@ void uart_put_hex(unsigned long n)
     uart_puts(&buf[i + 1]);
 }
 
+/* configure core EL2 regs
+        1. set EL1 to arm64
+        2. set a known-clean state for sysctrls
+        3. disable traps for SIMD/FP */
+static void el2_setup(void)
+{
+    uart_puts("icevmm: configing EL2\n");
+    /* 1 */
+    __write_hcr_el2(HCR_EL2_RW_BIT);
+    /* 2 */
+    __write_sctlr_el2(0);
+    /* 3 */
+    __write_cptr_el2(0);
+    uart_puts("icevmm: EL2 config'd");
+}
+
 /* C entrypoint, called from start.S */
 void main(void)
 {
     uart_init();
-    uart_puts("distant meows from baremetal aarch64 !!!\n");
+    uart_puts("distant meows from baremetal aarch64 !!!\n\n");
 
     unsigned long el = get_el();
     uart_puts("icevmm: current EL: ");
@@ -75,6 +98,10 @@ void main(void)
     }
 
     uart_puts("icevmm: running in EL2\n");
+
+    el2_setup();
+
+    hang();
 
 
     // /* do nothing for now */
