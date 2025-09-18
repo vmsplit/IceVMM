@@ -33,9 +33,9 @@ uint64_t __read_sctlr_el2(void);
 #define PTE_AP_RW_EL2 (0UL << 6)
 
 /* mem attribs fo MAIR_EL2 
-    `-> ATTR0: device-nGnRnE mem
+    `-> ATTR0: device-nGnRE mem
     `-> ATTR1: normal, in/outer WB/WA/RA */
-#define MAIR_ATTR0_DEV    (0x00)
+#define MAIR_ATTR0_DEV    (0x04)
 #define MAIR_ATTR1_NORM   (0xff)
 
 /* TCR_EL2 registers */
@@ -55,8 +55,8 @@ uint64_t __read_sctlr_el2(void);
     L0 -> L1 -> 1GB block 
     L0 tbl (1entr) -> L1 tbl
     L1 tbl (2entr) -> 2 1GB blocks */
-__attribute__((aligned(4096))) uint64_t l0_tbl[512];
-__attribute__((aligned(4096))) uint64_t l1_tbl[512];
+// __attribute__((section(".page_tables"), aligned(4096))) uint64_t l0_tbl[512];
+__attribute__((section(".page_tables"), aligned(4096))) uint64_t l1_tbl[512];
 
 /* UART */
 static void uart_init(void) { /* memory-mapped, no impl needed 4 qemu */ }
@@ -86,7 +86,7 @@ static void mmu_init(void)
     /* L0 tbl -> L1 tbl
            L0 entry covers the first 512GB of vaddr space
            it's a ptr to our L1 tbl */
-    l0_tbl[0] = PTE_VALID | PTE_TABLE | (uint64_t) l1_tbl;
+    // l0_tbl[0] = PTE_VALID | PTE_TABLE | (uint64_t) l1_tbl;
 
     /* L1 tbl -> 2GB of phys main mem
            create two 1GB block descripts for an identtiy map
@@ -94,13 +94,13 @@ static void mmu_init(void)
 
            VA 0x00_0000_0000 -> PA 0x00_0000_0000 (1GB)
            covers our UART addr @ 0x09000000 */
-    l1_tbl[0] = PTE_VALID | PTE_BLOCK | PTE_MEM_ATTR_IDX(0) |
+    l1_tbl[0] = PTE_VALID | PTE_BLOCK | PTE_MEM_ATTR_IDX(0) |   /* ATTR0 -> Device */
                    PTE_AF | PTE_SH_IS | PTE_AP_RW_EL2 | 0x00000000;
 
     /*     VA 0x40000000     -> PA 0x40000000     (1GB)
            covers our hypv code in main mem  */
-    l1_tbl[1] = PTE_VALID | PTE_BLOCK | PTE_MEM_ATTR_IDX(1) |
-                   PTE_AF | PTE_SH_IS | PTE_AP_RW_EL2 | 0x40000000;
+    l1_tbl[1] = PTE_VALID | PTE_BLOCK | PTE_MEM_ATTR_IDX(1) |   /* ATTR1 -> Normal */
+                PTE_AF | PTE_SH_IS | PTE_AP_RW_EL2 | 0x40000000;
 
     /* configure TCR_EL2
            39-bit VA space (512GB), 4K granule, inner shareable,
@@ -114,7 +114,7 @@ static void mmu_init(void)
     __asm__ volatile("msr mair_el2, %0" : : "r"((uint64_t) (MAIR_ATTR1_NORM << 8) | MAIR_ATTR0_DEV));
 
     /* set page table base addr */
-    __write_ttbr0_el2((uint64_t) l0_tbl);
+    __write_ttbr0_el2((uint64_t) l1_tbl);
 
     /* ensure all page table writes and config
        are actually committed */
@@ -168,7 +168,7 @@ static void el2_setup(void)
     __write_hcr_el2(HCR_EL2_RW_BIT);
 
     /* 2 - set SCTLR_EL2 to a known-good state */
-    __write_sctlr_el2(0x30C50830);
+    // __write_sctlr_el2(0x00000000);
 
     /* 3 */
     __write_cptr_el2(0);

@@ -40,4 +40,6 @@ run: all
 	    -cpu cortex-a57 \
 	    -m 6144 \
 	    -nographic \
+		-d in_asm \
+		-D qemu.log \
 	    -kernel $(TARGET_ELF)

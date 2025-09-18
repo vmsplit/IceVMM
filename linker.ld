@@ -7,23 +7,28 @@ SECTIONS
 {
     . = 0x40000000;
 
-    .text : ALIGN(4K) {
-        *(.text.boot)   /* boot code at beginning */
-        *(.text*)       /* all other code         */
+    .text : {
+        KEEP(*(.text.boot))
+        *(.text .text.*)
     }
 
     ##
     ## read-only data sect
     ##
-    .rodata : ALIGN(4K) {
-        *(.rodata*)
+    .rodata : {
+        *(.rodata .rodata.*)
     }
 
     ##
     ## read-write data sect
     ##
-    .data : ALIGN(4K) {
-        *(.data*)
+    .data : {
+        *(.data .data.*)
+    }
+
+    . = ALIGN(4096);
+    .page_tables : {
+        KEEP(*(.page_tables))
     }
 
     ##
@@ -31,10 +36,11 @@ SECTIONS
     ## create symbols to mark its start and end
     ## so our startup code can zero it all out
     ##
-    .bss : ALIGN(4K) {
+    .bss : {
         __bss_start = .;
-        *(.bss*)
-        __bss_end   = .;
+        *(.bss .bss.*)
+        . = ALIGN(8);
+        __bss_end = .;
     }
 
     ##
@@ -43,9 +49,8 @@ SECTIONS
     ## place the stack ptr here at the beginning
     ## allocate 64KB for the initial stack
     ##
-    . = ALIGN(16);
-    . += 64K;
+    . = ALIGN(4096);
+    __stack_start = .;
+    . += 0x1000;
     __stack_top = .;
-
-    END = .;
 }
