@@ -6,6 +6,7 @@
 /* prototypes for assembly funcs */
 unsigned long get_el(void);
 void hang(void);
+uint64_t va_2_pa_el2(uint64_t va);
 
 /*      read/write sysregs      */
 void __write_tcr_el2  (uint64_t val);
@@ -58,61 +59,102 @@ __attribute__((aligned(4096))) uint64_t l0_tbl[512];
 __attribute__((aligned(4096))) uint64_t l1_tbl[512];
 
 /* UART */
-static void uart_init(void) { }
-static void uart_putc(char c) { UART0_DR = c; }
+static void uart_init(void) { /* memory-mapped, no impl needed 4 qemu */ }
+static void uart_putc(char c) { if (c == '\n') { UART0_DR = '\r'; } UART0_DR = c; }
 static void uart_puts(const char *s) { while (*s) uart_putc(*s++); }
 void uart_put_hex(uint64_t n) 
 {
-    char buf[17]; int i = 15;
-    buf[16] = '\0';
-    if (n == 0) { uart_puts("0x0"); return; }
-    while (n > 0) {
-        uint64_t d = n % 16;
-        buf[i--] = (d < 10) ? ('0' + d) : ('a' + d - 10);
-        n /= 16;
+    // char buf[17]; int i = 15;
+    // buf[16] = '\0';
+    // if (n == 0) { uart_puts("0x0"); return; }
+    // while (n > 0) {
+    //     uint64_t d = n % 16;
+    //     buf[i--] = (d < 10) ? ('0' + d) : ('a' + d - 10);
+    //     n /= 16;
+    // }
+    // uart_puts("0x"); uart_puts(&buf[i + 1]);
+    char somedigits[] = "0123456789abcdef";
+    uart_puts("0x");
+    for (int i = 60; i >= 0; i -= 4) {
+            uart_putc(somedigits[(n >> i) & 0xf]);
     }
-    uart_puts("0x"); uart_puts(&buf[i + 1]);
 }
 
 /* setup MMU */
 static void mmu_init(void)
 {
-    /* L0 tbl -> L1 tbl 
-           L0 entry covers the first 512GB of vaddr space 
+    /* L0 tbl -> L1 tbl
+           L0 entry covers the first 512GB of vaddr space
            it's a ptr to our L1 tbl */
-    l0_tbl[0] = PTE_VALID | PTE_TABLE | (uint64_t)l1_tbl;
-    /* L1 tbl -> 2GB of phys main mem 
+    l0_tbl[0] = PTE_VALID | PTE_TABLE | (uint64_t) l1_tbl;
+
+    /* L1 tbl -> 2GB of phys main mem
            create two 1GB block descripts for an identtiy map
            an L1 block descript maps a 1GB region
 
-           VA 0x00_0000_0000 -> PA 0x00_0000_0000 (1GB) 
-           covers our UART addr @ 0x09000000*/
-    l0_tbl[0] = PTE_VALID | PTE_BLOCK | PTE_MEM_ATTR_IDX(1) | 
+           VA 0x00_0000_0000 -> PA 0x00_0000_0000 (1GB)
+           covers our UART addr @ 0x09000000 */
+    l1_tbl[0] = PTE_VALID | PTE_BLOCK | PTE_MEM_ATTR_IDX(0) |
                    PTE_AF | PTE_SH_IS | PTE_AP_RW_EL2 | 0x00000000;
-    /*     VA 0x00_2000_0000 -> PA 0x00_2000_0000 
-           covers our hypv code in main mem */
-    l1_tbl[1] = PTE_VALID | PTE_BLOCK | PTE_MEM_ATTR_IDX(1) | 
+
+    /*     VA 0x40000000     -> PA 0x40000000     (1GB)
+           covers our hypv code in main mem  */
+    l1_tbl[1] = PTE_VALID | PTE_BLOCK | PTE_MEM_ATTR_IDX(1) |
                    PTE_AF | PTE_SH_IS | PTE_AP_RW_EL2 | 0x40000000;
 
     /* configure TCR_EL2
-           39-bit VA space (512GB), 4K granule, inner shareable, 
+           39-bit VA space (512GB), 4K granule, inner shareable,
            WB cacheable, 40-bit PA space */
-    uint64_t __tcr = TCR_EL2_T0SZ(25) | TCR_EL2_TG0_4K | TCR_EL2_SH0_IS | TCR_EL2_ORGN0_WB | 
-                                      TCR_EL2_IRGN0_WB | TCR_EL2_PS_40_BIT;
+    uint64_t __tcr = TCR_EL2_T0SZ(25) | TCR_EL2_TG0_4K | TCR_EL2_SH0_IS | TCR_EL2_ORGN0_WB |
+                     TCR_EL2_IRGN0_WB | TCR_EL2_PS_40_BIT;
     __write_tcr_el2(__tcr);
 
     /* configure MAIR_EL2
-           ATTR0-Device, ATTR1-Normal
-           NOTE: isb is just for synchronising */
+           ATTR0-Device, ATTR1-Normal */
     __asm__ volatile("msr mair_el2, %0" : : "r"((uint64_t) (MAIR_ATTR1_NORM << 8) | MAIR_ATTR0_DEV));
+
     /* set page table base addr */
     __write_ttbr0_el2((uint64_t) l0_tbl);
+
+    /* ensure all page table writes and config
+       are actually committed */
+    __asm__ volatile("dsb sy");
     __asm__ volatile("isb");
-    /* enable MMU */
+
+    /* enable MMU, icache & dcache */
     uint64_t __sctlr = __read_sctlr_el2();
-    __sctlr |= 1;       /* set 'M' bit to enable */
+    /* icache, dcache, MMU */
+    __sctlr |= (1 << 12) | (1 << 2) | 1;
     __write_sctlr_el2(__sctlr);
     __asm__ volatile("isb");
+}
+
+
+/* test func */
+static void mmu_test(void)
+{
+    uart_puts("icevmm: mmu translation test\n");
+
+    uint64_t va_uart = 0x09000000;
+    uint64_t pa_uart = va_2_pa_el2(va_uart);
+    uart_puts("VA[UART]: "); uart_put_hex(va_uart);
+    uart_puts(" -> PA["); uart_put_hex(pa_uart); uart_puts("]\n");
+
+    uint64_t va_code = 0x40020000;
+    uint64_t pa_code = va_2_pa_el2(va_code);
+    uart_puts("VA[CODE]: "); uart_put_hex(va_code);
+    uart_puts(" -> PA["); uart_put_hex(pa_code); uart_puts("]\n");
+
+    uint64_t va_bad = 0x8000000000; /* not mapped in our addr space, but it's valid */
+    uint64_t pa_bad = va_2_pa_el2(va_bad);
+    uart_puts("VA[BAD]:  "); uart_put_hex(va_bad);
+    uart_puts(" -> PA["); uart_put_hex(pa_bad); uart_puts("]\n");
+
+    if (pa_bad & 1) {
+            uart_puts("icevmm: translation for VA[BAD] correctly failed !!!\n");
+    }
+
+    uart_puts("icevmm: end test...\n");
 }
 
 /* configure core EL2 regs
@@ -121,21 +163,23 @@ static void mmu_init(void)
         3. disable traps for SIMD/FP */
 static void el2_setup(void)
 {
-    uart_puts("icevmm: configing EL2\n");
+    uart_puts("icevmm: configuring EL2\n");
     /* 1 */
     __write_hcr_el2(HCR_EL2_RW_BIT);
-    /* 2 */
-    __write_sctlr_el2(0);
+
+    /* 2 - set SCTLR_EL2 to a known-good state */
+    __write_sctlr_el2(0x30C50830);
+
     /* 3 */
     __write_cptr_el2(0);
-    uart_puts("icevmm: EL2 config'd");
+    uart_puts("icevmm: EL2 configured !!!\n");
 }
 
 /* C entrypoint, called from start.S */
 void main(void)
 {
     uart_init();
-    uart_puts("distant meows from baremetal aarch64 !!!\n\n");
+    uart_puts("\nicevmm: distant meows from baremetal aarch64 !!!\n");
 
     unsigned long __el = get_el();
     uart_puts("icevmm: current EL: ");
@@ -153,9 +197,11 @@ void main(void)
 
     el2_setup();
 
-    uart_puts("icevmm: configing MMU\n");
+    uart_puts("icevmm: enabling MMU\n");
     mmu_init();
     uart_puts("icevmm: MMU enabled !!!\n");
+
+    mmu_test();
 
     hang();
 
