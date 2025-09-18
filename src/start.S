@@ -87,6 +87,55 @@ hang:
     wfi
     b       hang
 
+.section .rodata
+.Ltrap_msg:
+    .asciz      "!!! TRAP HANDLER INVOKED !!!\n"
+
+.section ".text"
+##
+## vector table has to be 
+## 2048-byte 0x800 aligned
+##
+.align 11
+
+.globl __exception_vectors
+
+__exception_vectors:
+    ##
+    ## current EL with SP0
+    ##
+    b       __trap_handler  /* synchronous */
+    b       __trap_handler  /*     IRQ     */
+    b       __trap_handler  /*     FIQ     */
+    b       __trap_handler  /*    SError   */
+    ##
+    ## current EL with SPx
+    ##
+    b       __trap_handler  /* synchronous */
+    b       __trap_handler  /*     IRQ     */
+    b       __trap_handler  /*     FIQ     */
+    b       __trap_handler  /*    SError   */
+    ##
+    ## lower EL using aarch64
+    ##
+    b       __trap_handler  /* synchronous */
+    b       __trap_handler  /*     IRQ     */
+    b       __trap_handler  /*     FIQ     */
+    b       __trap_handler  /*    SError   */
+    ##
+    ## lower EL using aarch32
+    ##
+    b       __trap_handler  /* synchronous */
+    b       __trap_handler  /*     IRQ     */
+    b       __trap_handler  /*     FIQ     */
+    b       __trap_handler  /*    SError   */
+
+.globl __trap_handler
+
+__trap_handler:
+    ldr     x0, =.Ltrap_msg
+    bl      uart_puts
+    b       hang
 
 ##
 ## C-callable funcs to write to sys regs
@@ -125,6 +174,12 @@ __write_tcr_el2:
 
 __write_ttbr0_el2:
     msr     ttbr0_el2, x0
+    ret
+
+.globl __write_vbar_el2
+
+__write_vbar_el2:
+    msr     vbar_el2, x0
     ret
 
 

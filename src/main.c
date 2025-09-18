@@ -1,14 +1,27 @@
 #include <stdint.h>
 
+#include "vm.h"
+
+const uint32_t _guest_payload[] = {
+    0xd4000001
+};
+
 /* base addr of the PL011 UART in qemu's 'virt' machine */
 #define UART0_DR    (*(volatile uint32_t*)0x09000000)
+
+/* prototypes */
+void uart_puts(const char *s);
+void uart_putc(char c);
+vm_t guest_vm;
 
 /* prototypes for assembly funcs */
 unsigned long get_el(void);
 void hang(void);
 uint64_t va_2_pa_el2(uint64_t va);
+extern void __exception_vectors(void);
 
 /*      read/write sysregs      */
+void __write_vbar_el2 (uint64_t val);
 void __write_tcr_el2  (uint64_t val);
 void __write_hcr_el2  (uint64_t val);
 void __write_cptr_el2 (uint64_t val);
@@ -59,20 +72,11 @@ uint64_t __read_sctlr_el2(void);
 __attribute__((section(".page_tables"), aligned(4096))) uint64_t l1_tbl[512];
 
 /* UART */
-static void uart_init(void) { /* memory-mapped, no impl needed 4 qemu */ }
-static void uart_putc(char c) { if (c == '\n') { UART0_DR = '\r'; } UART0_DR = c; }
-static void uart_puts(const char *s) { while (*s) uart_putc(*s++); }
-void uart_put_hex(uint64_t n) 
+void uart_init(void) { /* memory-mapped, no impl needed 4 qemu */ }
+void uart_putc(char c) { if (c == '\n') { UART0_DR = '\r'; } UART0_DR = c; }
+void uart_puts(const char *s) { while (*s) uart_putc(*s++); }
+void uart_put_hex(uint64_t n)
 {
-    // char buf[17]; int i = 15;
-    // buf[16] = '\0';
-    // if (n == 0) { uart_puts("0x0"); return; }
-    // while (n > 0) {
-    //     uint64_t d = n % 16;
-    //     buf[i--] = (d < 10) ? ('0' + d) : ('a' + d - 10);
-    //     n /= 16;
-    // }
-    // uart_puts("0x"); uart_puts(&buf[i + 1]);
     char somedigits[] = "0123456789abcdef";
     uart_puts("0x");
     for (int i = 60; i >= 0; i -= 4) {
@@ -137,18 +141,18 @@ static void mmu_test(void)
 
     uint64_t va_uart = 0x09000000;
     uint64_t pa_uart = va_2_pa_el2(va_uart);
-    uart_puts("VA[UART]: "); uart_put_hex(va_uart);
-    uart_puts(" -> PA["); uart_put_hex(pa_uart); uart_puts("]\n");
+    uart_puts("     VA[UART]: "); uart_put_hex(va_uart);
+    uart_puts("       \n      `------> PA["); uart_put_hex(pa_uart); uart_puts("]\n");
 
     uint64_t va_code = 0x40020000;
     uint64_t pa_code = va_2_pa_el2(va_code);
-    uart_puts("VA[CODE]: "); uart_put_hex(va_code);
-    uart_puts(" -> PA["); uart_put_hex(pa_code); uart_puts("]\n");
+    uart_puts("     VA[CODE]: "); uart_put_hex(va_code);
+    uart_puts("       \n      `------> PA["); uart_put_hex(pa_code); uart_puts("]\n");
 
     uint64_t va_bad = 0x8000000000; /* not mapped in our addr space, but it's valid */
     uint64_t pa_bad = va_2_pa_el2(va_bad);
-    uart_puts("VA[BAD]:  "); uart_put_hex(va_bad);
-    uart_puts(" -> PA["); uart_put_hex(pa_bad); uart_puts("]\n");
+    uart_puts("     VA[BAD]:  "); uart_put_hex(va_bad);
+    uart_puts("       \n      `------> PA["); uart_put_hex(pa_bad); uart_puts("]\n");
 
     if (pa_bad & 1) {
             uart_puts("icevmm: translation for VA[BAD] correctly failed !!!\n");
@@ -172,7 +176,29 @@ static void el2_setup(void)
 
     /* 3 */
     __write_cptr_el2(0);
+
+    __write_vbar_el2((uint64_t) __exception_vectors);
+    uart_puts("icevmm: written vectors to vbar_el2 reg\n");
+
     uart_puts("icevmm: EL2 configured !!!\n");
+}
+
+static void vm_create(void)
+{
+    uart_puts("icevmm: creating vm...\n");
+
+    /* initialise vcpu regs and setup the SPSR_EL2
+       which determines the state of the cpu when we
+       eret to guest
+       
+       also set guest's stack ptr, give it the top
+       of our stack for the moment.. */
+    vcpu_t *vcpu = &guest_vm.vcpu;
+    vcpu->regs.elr_el2 = (uint64_t) _guest_payload;
+    vcpu->regs.spsr_el2 = 0x3c5;
+    vcpu->regs.sp_el1 = (uint64_t) __stack_top;
+
+
 }
 
 /* C entrypoint, called from start.S */
