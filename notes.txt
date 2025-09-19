@@ -1,0 +1,9 @@
+sep 19th:
+	got trapping working, now we can try decoding the trap
+	reason by reading ESR_EL2 which holds the reason...
+	but unfortunately it doesn't hold the key ot my heart
+
+	handle the trap with a dispatcher to find the reason
+	and decide the most ILLOGICAL path
+
+	resume guest
