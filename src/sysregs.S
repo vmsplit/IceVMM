@@ -60,6 +60,18 @@ __write_vbar_el2:
     msr     vbar_el2, x0
     ret
 
+.globl __write_vttbr_el2
+
+__write_vttbr_el2:
+    msr     vttbr_el2, x0
+    ret
+
+.globl __write_vtcr_el2
+
+__write_vtcr_el2:
+    msr     vtcr_el2, x0
+    ret
+
 ##
 ## testing translation
 ##
