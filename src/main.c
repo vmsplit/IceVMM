@@ -3,7 +3,7 @@
 #include "vm.h"
 
 const uint32_t _guest_payload[] = {
-    0xd503207f  /* wfi */
+    0xd4000002  /* hvc #0 */
 };
 
 /* base addr of the PL011 UART in qemu's 'virt' machine */
@@ -74,7 +74,7 @@ uint64_t __read_sctlr_el2(void);
     `-> HCR_EL2_RW_BIT: set EL1 to be arm4 */
 #define HCR_EL2_RW_BIT  (1UL << 31)
 #define HCR_EL2_TGE_BIT (1UL << 27)
-#define HCR_EL2_TWI_BIT (1UL << 20)
+// #define HCR_EL2_TWI_BIT (1UL << 20)
 
 /* page tables
     create identity map for the first 2GB of mem
@@ -188,7 +188,8 @@ static void el2_setup(void)
 {
     uart_puts("icevmm: configuring EL2\n");
     /* 1 */
-    __write_hcr_el2(HCR_EL2_RW_BIT | HCR_EL2_TWI_BIT);
+    uint64_t __hcr = HCR_EL2_RW_BIT | (1UL << 26);  /* HCR_EL2_HVC */
+    __write_hcr_el2(__hcr);
 
     /* 2 - set SCTLR_EL2 to a known-good state */
     // __write_sctlr_el2(0x00000000);
@@ -218,17 +219,17 @@ static void vm_create(void)
     vcpu->regs.sp_el1 = (uint64_t) __stack_top;
 }
 
-void __handle_trap(vcpu_t *vcpu)
+void handle_trap(vcpu_t *vcpu)
 {
-    (void) vcpu;
+    uint64_t __esr;
+    __asm__ volatile("mrs %0, esr_el2" : "=r"(__esr));
 
-    uint64_t __esr_el2;
-    __asm__ volatile("mrs %0, esr_el2" : "=r"(__esr_el2));
-    
     uart_puts("!!! TRAP HANDLER INVOKED !!!\n");
     uart_puts("     ESR_EL2[");
-    uart_put_hex(__esr_el2);
+    uart_put_hex(__esr);
     uart_puts("]\n");
+
+    vcpu->regs.elr_el2 += 4;
 }
 
 /* C entrypoint, called from start.S */
