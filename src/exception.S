@@ -40,7 +40,12 @@ __exception_vectors:
 __lower_el_sync_handler:
     ##
     ## x19 still holds the vcpu ptr from before 
-    ## the eret. guest has trapped so we save its state
+    ## the eret in vcpu_run. guest has trapped 
+    ## so we save its state
+    ##
+    ## offset is calc'd from the start of the
+    ## vcpu_t struct, which contains the 
+    ## vcpu_regs_t struct
     ##
     stp     x0,  x1,  [x19, #8*0]
     stp     x2,  x3,  [x19, #8*2]
@@ -59,6 +64,9 @@ __lower_el_sync_handler:
     stp     x27, x28, [x19, #8*27]
     stp     x29, x30, [x19, #8*29]
 
+    ##
+    ## save sp, elr, spsr el1/2 regs
+    ##
     mrs     x20, sp_el1
     str     x20, [x19, #8*31]
     mrs     x20, elr_el2
@@ -66,11 +74,44 @@ __lower_el_sync_handler:
     mrs     x20, spsr_el2
     str     x20, [x19, #8*33]
 
-    ldp     x29, x30, [sp], #16
-    ldp     x27, x28, [sp], #16
-    ldp     x25, x26, [sp], #16
-    ldp     x23, x24, [sp], #16
-    ldp     x21, x22, [sp], #16
-    ldp     x19, x20, [sp], #16
+    ##
+    ## call our trap handler
+    ##
+    ## vcpu_t* arg is passed in
+    ## x0 according to ABI
+    ##
+    ## our ptr still resides in x19
+    ##
+    mov     x0, x19
+    bl      __handle_trap
 
-    ret
+    ##
+    ## restore guest state from
+    ## vcpu struct and resume it
+    ##
+    ldp     x0,  x1,  [x19, #8*0]
+    ldp     x2,  x3,  [x19, #8*2]
+    ldp     x4,  x5,  [x19, #8*4]
+    ldp     x6,  x7,  [x19, #8*6]
+    ldp     x8,  x9,  [x19, #8*8]
+    ldp     x10, x11, [x19, #8*10]
+    ldp     x12, x13, [x19, #8*12]
+    ldp     x14, x15, [x19, #8*14]
+    ldp     x16, x17, [x19, #8*16]
+    /* skip x19 again again */
+    ldp     x18, x20, [x19, #8*18]
+    ldp     x21, x22, [x19, #8*21]
+    ldp     x23, x24, [x19, #8*23]
+    ldp     x25, x26, [x19, #8*25]
+    ldp     x27, x28, [x19, #8*27]
+    ldp     x29, x30, [x19, #8*29]
+
+    /* restore sp, elr, spsr el1/2 regs for guest */
+    ldr     x20, [x19, #8*31]
+    msr     sp_el1,   x20
+    ldr     x20, [x19, #8*32]
+    msr     elr_el2,  x20
+    ldr     x20, [x19, #8*33]
+    msr     spsr_el2, x20
+
+    eret

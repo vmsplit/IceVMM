@@ -7,3 +7,6 @@ sep 19th:
 	and decide the most ILLOGICAL path
 
 	resume guest
+
+
+	setup interrupt stuff cuz qemu just halts the vCPU
