@@ -12,3 +12,25 @@ sep 19th:
 	setup interrupt stuff cuz qemu just halts the vCPU
 	and also translate guest-phys addrs to host-phys addrs
 		(stage-2 translation)
+
+	+---------------------------------+
+	|          guest (EL1)            |
+	| "i want 0x09000000"  			  |
+	| (IPA)			                  |
+	+---------------------------------+
+						   |
+		  IPA: 0x09000000  |
+						   v
+	+---------------------------------+
+	|          hypv (EL2)             |
+	|        [ stage-2 PTs ]          |
+	|  "IPA 0x09000000 maps to PA     |
+	|   0x09000000 in my tablez"      |
+	+---------------------------------+
+				|
+				|  PA: 0x09000000
+				v
+	+---------------------------------+
+	|         phys hardware	          |
+	|       (UART controller)         |
+	+---------------------------------+
