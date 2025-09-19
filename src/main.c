@@ -23,6 +23,7 @@ void uart_putc(char c);
 unsigned long get_el(void);
 
 void hang(void);
+void vcpu_run(vcpu_t *vcpu);
 
 uint64_t va_2_pa_el2(uint64_t va);
 
@@ -144,32 +145,38 @@ static void mmu_init(void)
 }
 
 
-/* test func */
-static void mmu_test(void)
-{
-    uart_puts("icevmm: mmu translation test\n");
 
-    uint64_t va_uart = 0x09000000;
-    uint64_t pa_uart = va_2_pa_el2(va_uart);
-    uart_puts("     VA[UART]: "); uart_put_hex(va_uart);
-    uart_puts("       \n      `------> PA["); uart_put_hex(pa_uart); uart_puts("]\n");
 
-    uint64_t va_code = 0x40020000;
-    uint64_t pa_code = va_2_pa_el2(va_code);
-    uart_puts("     VA[CODE]: "); uart_put_hex(va_code);
-    uart_puts("       \n      `------> PA["); uart_put_hex(pa_code); uart_puts("]\n");
+/* test func
+        for testing mmu purpooses only  */
+// static void mmu_test(void)
+// {
+//     uart_puts("icevmm: mmu translation test\n");
 
-    uint64_t va_bad = 0x8000000000; /* not mapped in our addr space, but it's valid */
-    uint64_t pa_bad = va_2_pa_el2(va_bad);
-    uart_puts("     VA[BAD]:  "); uart_put_hex(va_bad);
-    uart_puts("       \n      `------> PA["); uart_put_hex(pa_bad); uart_puts("]\n");
+//     uint64_t va_uart = 0x09000000;
+//     uint64_t pa_uart = va_2_pa_el2(va_uart);
+//     uart_puts("     VA[UART]: "); uart_put_hex(va_uart);
+//     uart_puts("       \n      `------> PA["); uart_put_hex(pa_uart); uart_puts("]\n");
 
-    if (pa_bad & 1) {
-            uart_puts("icevmm: translation for VA[BAD] correctly failed !!!\n");
-    }
+//     uint64_t va_code = 0x40020000;
+//     uint64_t pa_code = va_2_pa_el2(va_code);
+//     uart_puts("     VA[CODE]: "); uart_put_hex(va_code);
+//     uart_puts("       \n      `------> PA["); uart_put_hex(pa_code); uart_puts("]\n");
 
-    uart_puts("icevmm: end test...\n");
-}
+//     uint64_t va_bad = 0x8000000000; /* not mapped in our addr space, but it's valid */
+//     uint64_t pa_bad = va_2_pa_el2(va_bad);
+//     uart_puts("     VA[BAD]:  "); uart_put_hex(va_bad);
+//     uart_puts("       \n      `------> PA["); uart_put_hex(pa_bad); uart_puts("]\n");
+
+//     if (pa_bad & 1) {
+//             uart_puts("icevmm: translation for VA[BAD] correctly failed !!!\n");
+//     }
+
+//     uart_puts("icevmm: end test...\n");
+// }
+
+
+
 
 /* configure core EL2 regs
         1. set EL1 to arm64
@@ -233,12 +240,26 @@ void main(void)
 
     el2_setup();
 
-    uart_puts("icevmm: enabling MMU\n");
+    uart_puts("icevmm: enabling MMU...\n");
     mmu_init();
     uart_puts("icevmm: MMU enabled !!!\n");
 
-    mmu_test();
+    // mmu_test();
 
+    vm_create();
+    uart_puts("icevmm: running vm...\n");
+    vcpu_run(&guest_vm.vcpu);
+
+    /* after guest traps, execution resumes here */
+    uart_puts("icevmm: vm exited !!! dumping guest state...\n");
+    /* read from ESR_EL2 to inspect trap */
+    uint64_t __esr_el2;
+    __asm__ volatile("mrs %0, esr_el2" : "=r"(__esr_el2));
+    uart_puts("     ESR_EL2[");
+    uart_put_hex(__esr_el2);
+    uart_puts("]\n");
+
+    uart_puts("icevmm: halting !!!\n");
     hang();
 
 
