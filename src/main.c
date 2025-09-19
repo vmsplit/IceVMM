@@ -23,6 +23,7 @@ vm_t guest_vm;
 /* prototypes */
 void uart_puts(const char *s);
 void uart_putc(char c);
+void uart_put_hex(uint64_t n);
 
 /* prototypes for assembly funcs */
 unsigned long get_el(void);
@@ -43,6 +44,9 @@ void __write_ttbr0_el2 (uint64_t val);
 void __write_sctlr_el2 (uint64_t val);
 void __write_vttbr_el2 (uint64_t val);
 void __write_vtcr_el2  (uint64_t val);
+
+/*      tlb flush/invalidate      */
+void __tlbi_vmalle1(void);
 
 /*      read sysregs       */
 uint64_t __read_sctlr_el2(void);
@@ -175,6 +179,9 @@ static void guest_mmu_init(void)
 
     /* set the s2 PT base addr */
     __write_vttbr_el2((uint64_t) guest_l1_pt);
+
+    /* invalidate all tlb entries for guest VMID */
+    __tlbi_vmalle1();
     
     uart_puts("icevmm: guest stage 2 MMU configured !!!\n");
 }
@@ -260,8 +267,6 @@ void handle_trap(vcpu_t *vcpu)
             uart_puts("icevmm:      unhandled exception. halting !!!\n");
             hang();
     }
-
-    vcpu->regs.elr_el2 += 4;
 }
 
 /* C entrypoint, called from start.S */
