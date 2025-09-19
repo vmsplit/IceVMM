@@ -52,7 +52,8 @@ _start:
 .bss_loop:
     cmp     x1, x2              /* compare current addr with the end addr */
     b.ge    .bss_done           /* if start>=end, we're done              */
-    str     xzr, [x1], #8       /* store the xzr aka zero reg at the addr, then increment by 8 */
+    str     xzr, [x1], #8       /* store the xzr aka zero reg at the addr, 
+                                   then increment by 8                    */
 .bss_done:
     ##
     ## jump to our C entrypoint
@@ -181,7 +182,6 @@ __write_ttbr0_el2:
 __write_vbar_el2:
     msr     vbar_el2, x0
     ret
-
 
 ##
 ## testing translation

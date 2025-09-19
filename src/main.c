@@ -9,27 +9,37 @@ const uint32_t _guest_payload[] = {
 /* base addr of the PL011 UART in qemu's 'virt' machine */
 #define UART0_DR    (*(volatile uint32_t*)0x09000000)
 
+/* linker exports */
+extern uint64_t __stack_top;
+
+/* structs */
+vm_t guest_vm;
+
 /* prototypes */
 void uart_puts(const char *s);
 void uart_putc(char c);
-vm_t guest_vm;
 
 /* prototypes for assembly funcs */
 unsigned long get_el(void);
+
 void hang(void);
+
 uint64_t va_2_pa_el2(uint64_t va);
+
 extern void __exception_vectors(void);
 
-/*      read/write sysregs      */
+/*      write sysregs      */
 void __write_vbar_el2 (uint64_t val);
 void __write_tcr_el2  (uint64_t val);
 void __write_hcr_el2  (uint64_t val);
 void __write_cptr_el2 (uint64_t val);
 void __write_ttbr0_el2(uint64_t val);
 void __write_sctlr_el2(uint64_t val);
+
+/*      read sysregs       */
 uint64_t __read_sctlr_el2(void);
 
-/* PTDs */
+/* PT data                       */
 /*      L1-3D descrip table      */
 #define PTE_VALID     (1UL << 0)
 #define PTE_TABLE     (1UL << 1)
