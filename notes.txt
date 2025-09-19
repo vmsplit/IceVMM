@@ -10,3 +10,5 @@ sep 19th:
 
 
 	setup interrupt stuff cuz qemu just halts the vCPU
+	and also translate guest-phys addrs to host-phys addrs
+		(stage-2 translation)
