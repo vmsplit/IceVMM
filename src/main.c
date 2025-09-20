@@ -16,24 +16,26 @@ const uint32_t _guest_payload[] = {
 
 /* linker exports */
 extern uint64_t __stack_top;
+extern uint64_t __text_start,   __text_end;
+extern uint64_t __rodata_start, __rodata_end;
+extern uint64_t __data_start,   __data_end;
+extern uint64_t __bss_start,    __bss_end;
 
 /* structs */
 vm_t guest_vm;
 
 /* prototypes */
+void uart_init(void);
 void uart_puts(const char *s);
 void uart_putc(char c);
 void uart_put_hex(uint64_t n);
 
 /* prototypes for assembly funcs */
 unsigned long get_el(void);
-
 void hang(void);
 void vcpu_run(vcpu_t *vcpu);
-
-uint64_t va_2_pa_el2(uint64_t va);
-
 extern void __exception_vectors(void);
+// uint64_t va_2_pa_el2(uint64_t va);
 
 /*      write sysregs      */
 void __write_vbar_el2  (uint64_t val);
@@ -52,50 +54,56 @@ void __tlbi_vmalle1(void);
 uint64_t __read_sctlr_el2(void);
 
 /* PT data . stage 1 (for hypv) */
-#define PTE_VALID     (1UL << 0)
-#define PTE_TABLE     (1UL << 1)
-#define PTE_BLOCK     (0UL << 1)
-#define PTE_MEM_ATTR_IDX(x) ((x) << 2)
-#define PTE_AF        (1UL << 10)
-#define PTE_SH_IS     (3UL << 8)
-#define PTE_AP_RW_EL2 (0UL << 6)
+#define PTE_VALID             (1UL << 0)
+#define PTE_TABLE             (1UL << 1)
+#define PTE_BLOCK             (0UL << 1)
+#define PTE_MEM_ATTR_IDX(x)   ((x) << 2)
+#define PTE_AF                (1UL << 10)
+#define PTE_SH_IS             (3UL << 8)
+#define PTE_AP_RW_EL2         (0UL << 6)
 
 /* mem attribs for MAIR_EL2 
     `--> ATTR0: device-nGnRE mem
     `--> ATTR1: normal, in/outer WB/WA/RA */
-#define MAIR_ATTR0_DEV    (0x04)
-#define MAIR_ATTR1_NORM   (0xff)
+#define MAIR_ATTR0_DEV        (0x04)
+#define MAIR_ATTR1_NORM       (0xff)
 
 /* TCR_EL2 registers */
-#define TCR_EL2_T0SZ(x)  ((x) & 0x3F)   /* TnSZ = 64 - x */
-#define TCR_EL2_PS_40_BIT (2UL << 16)
-#define TCR_EL2_TG0_4K    (0UL << 14)
-#define TCR_EL2_SH0_IS    (3UL << 12)
-#define TCR_EL2_ORGN0_WB  (1UL << 10)
-#define TCR_EL2_IRGN0_WB   (1UL << 8)
+#define TCR_T0SZ(x)           ((x) & 0x3F)
+#define TCR_PS_40_BIT         (2UL << 16)
+#define TCR_TG0_4K            (0UL << 14)
+#define TCR_SH0_IS            (3UL << 12)
+#define TCR_ORGN0_WB          (1UL << 10)
+#define TCR_IRGN0_WB          (1UL << 8)
 
 /* HCR_EL2 bit to enable stage 2 translation 
    for guest*/
-#define HCR_EL2_RW_BIT  (1UL << 31)
-#define HCR_EL2_VM_BIT  (1UL << 0)
+#define HCR_EL2_RW_BIT        (1UL << 31)
+#define HCR_EL2_VM_BIT        (1UL << 0)
 // #define HCR_EL2_TGE_BIT (1UL << 27)
 // #define HCR_EL2_TWI_BIT (1UL << 20)
+
+/* SCTLR_EL2 bits */
+#define SCTLR_EL2_M           (1UL << 0)
+#define SCTLR_EL2_C           (1UL << 2)
+#define SCTLR_EL2_I           (1UL << 12)
 
 /* stage 2 guest PT descripts */
 #define PTE_S2_VALID          (1UL << 0)
 #define PTE_S2_TABLE          (1UL << 1)
 #define PTE_S2_BLOCK          (0UL << 1)
-#define PTE_S2_MEMATTR_IDX(x) ((x) << 2)
 #define PTE_S2_AP_RW          (3UL << 6)
 #define PTE_S2_SH_IS          (3UL << 8)
-#define PTE_S2_AF            (1UL << 10)
+#define PTE_S2_AF             (1UL << 10)
+#define PTE_S2_MEMATTR_IDX(x) ((x) << 2)
+
 
 /* VTCR_EL2 s2 translation ctrl bits */
-#define VTCR_EL2_T0SZ(x)    ((x) & 0x3F)
-#define VTCR_EL2_PS_40_BIT   (2UL << 16)
-#define VTCR_EL2_TG0_4K      (0UL << 14)
-#define VTCR_EL2_SH0_IS      (3UL << 12)
-#define VTCR_EL2_ORGN0_WB    (1UL << 10)
+#define VTCR_EL2_T0SZ(x)      ((x) & 0x3F)
+#define VTCR_EL2_PS_40_BIT    (2UL << 16)
+#define VTCR_EL2_TG0_4K       (0UL << 14)
+#define VTCR_EL2_SH0_IS       (3UL << 12)
+#define VTCR_EL2_ORGN0_WB     (1UL << 10)
 #define VTCR_EL2_IRGN0_WB     (1UL << 8)
 
 /* hypv s1 PTs and guest s2 PTs 

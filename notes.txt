@@ -35,3 +35,15 @@ sep 19th:
 	|         phys hardware	          |
 	|       (UART controller)         |
 	+---------------------------------+
+
+sep 20th:
+	in guest_mmu_init we set TCR_T0SZ(25)
+	but according to the ARMv8 arch TRM a T0SZ
+	of val 25 for a 4KiB granule size instructs
+	the cpu that the PT walk starts at L1.
+
+	so the hardware would expect the addr to be
+	loaded into VTTBR_EL2 and be the base of a L1 PT
+
+	at the moment however we're just creating a 2-level PT
+	structure.
