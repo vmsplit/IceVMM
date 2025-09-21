@@ -11,8 +11,7 @@ _start:
     ## find out which core we are
     ##
     ## the MPIDR_EL1 reg holds the multi-processor
-    ## affinity register
-    ## the lower bits are the core ID
+    ## affinity register. the lower bits are the core ID
     ##
     mrs     x0, mpidr_el1
     and     x0, x0, #3          /* mask to get core ID                 */

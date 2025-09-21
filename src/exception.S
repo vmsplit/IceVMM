@@ -7,46 +7,35 @@
 ##
 .align 11
 __exception_vectors:
-    ##
-    ## each vector entry is 0x80 or 128 bytes long
-    ## for now we just use an inf loop
-    ##
+    .align 7; b .;  /* current EL with SP0:  Sync   */
+    .align 7; b .;  /* current EL with SP0:  IRQ    */
+    .align 7; b .;  /* current EL with SP0:  FIQ    */
+    .align 7; b .;  /* current EL with SP0:  SError */
 
-    ##
-    ## current el with SP0: sync, IRQ, FIQ, SError
-    ##
-    .align 7; b .;
-    .align 7; b .;
-    .align 7; b .;
-    .align 7; b .;
-    ##
-    ## current el with SPx: sync, IRQ, FIQ, SError
-    ##
-    .align 7; b .;
-    .align 7; b .;
-    .align 7; b .;
-    .align 7; b .;
+    .align 7; b .;  /* current EL with SPx:  Sync   */
+    .align 7; b .;  /* current EL with SPx:  IRQ    */
+    .align 7; b .;  /* current EL with SPx:  FIQ    */
+    .align 7; b .;  /* current EL with SPx:  SError */
 
-    ##
-    ## lower el using aarch64: sync, IRQ, FIQ, SError
-    ## HVC from el1 lands here
-    ##
     .align 7
 __lower_el_sync_handler:
     ##
-    ## x0 contains ptr to the vcpu struct
-    ## passed from vcpu_run
+    ## a hardware trap from lower EL doesn't pass args in regs so we must
+    ## load the addr of our vCPU ctx from a known global loc.
     ##
-    ## save it and use x19, 
-    ## a callee-saved reg
+    ## we use x19 as a callee-saved reg to hold the ptr
     ##
-    mov     x19, x0
-
+    ## so we can load the addr of the global `guest_vm` into x19
     ##
-    ## save all guest's GPRs x0-x30
-    ## into the vCPU struct
+    adrp    x19, guest_vm
+    add     x19, x19, :lo12:guest_vm
+    /* note: guest_vm is the vm_t struct, vcpu_t is the first member
+             so the addr will be the same */
     ##
-   stp     x0,   x1,  [x19, #(16 * 0)]
+    ## now that x19 holds our ctx ptr, save all guest regs
+    ##      all regs x0-x30 contain the guest's state at the time of trap
+    ##
+    stp     x0,  x1,  [x19, #(16 * 0)]
     stp     x2,  x3,  [x19, #(16 * 1)]
     stp     x4,  x5,  [x19, #(16 * 2)]
     stp     x6,  x7,  [x19, #(16 * 3)]
@@ -55,39 +44,30 @@ __lower_el_sync_handler:
     stp     x12, x13, [x19, #(16 * 6)]
     stp     x14, x15, [x19, #(16 * 7)]
     stp     x16, x17, [x19, #(16 * 8)]
-    stp     x18, x20, [x19, #(16 * 9)]
-    stp     x21, x22, [x19, #(16 * 10)]
-    stp     x23, x24, [x19, #(16 * 11)]
-    stp     x25, x26, [x19, #(16 * 12)]
-    stp     x27, x28, [x19, #(16 * 13)]
-    stp     x29, x30, [x19, #(16 * 14)]
-
-
+    stp     x18, x19, [x19, #(16 * 9)]
+    stp     x20, x21, [x19, #(16 * 10)]
+    stp     x22, x23, [x19, #(16 * 11)]
+    stp     x24, x25, [x19, #(16 * 12)]
+    stp     x26, x27, [x19, #(16 * 13)]
+    stp     x28, x29, [x19, #(16 * 14)]
+    str     x30,      [x19, #(8 * 30)]
     ##
-    ## save sp, elr, spsr el1/2 regs
+    ## now we can save any special regs
     ##
     mrs     x20, sp_el1
-    str     x20, [x19, #(8 * 31)]   // regs.sp_el1
+    str     x20, [x19, #(8 * 31)]   /* regs.sp_el1   */
     mrs     x20, elr_el2
-    str     x20, [x19, #(8 * 32)]   // regs.elr_el2
+    str     x20, [x19, #(8 * 32)]   /* regs.elr_el2  */
     mrs     x20, spsr_el2
-    str     x20, [x19, #(8 * 33)]   // regs.spsr_el2
-
-
+    str     x20, [x19, #(8 * 33)]   /* regs.spsr_el2 */
     ##
-    ## call our trap handler
-    ##
-    ## vcpu_t* arg is passed in
-    ## x0 according to ABI
-    ##
-    ## our ptr still resides in x19
+    ## now we call our C trap handler
+    ## x0 must point to the vcpu struct
     ##
     mov     x0, x19
     bl      handle_trap
-
     ##
-    ## restore guest's state from
-    ## vcpu struct and resume it
+    ## restore guest's state & resume
     ##
     ldp     x0,  x1,  [x19, #(16 * 0)]
     ldp     x2,  x3,  [x19, #(16 * 1)]
@@ -98,34 +78,30 @@ __lower_el_sync_handler:
     ldp     x12, x13, [x19, #(16 * 6)]
     ldp     x14, x15, [x19, #(16 * 7)]
     ldp     x16, x17, [x19, #(16 * 8)]
-    ldp     x18, x20, [x19, #(16 * 9)]
-    ldp     x21, x22, [x19, #(16 * 10)]
-    ldp     x23, x24, [x19, #(16 * 11)]
-    ldp     x25, x26, [x19, #(16 * 12)]
-    ldp     x27, x28, [x19, #(16 * 13)]
-    ldp     x29, x30, [x19, #(16 * 14)]
-
-    ldr     x20, [x19, #8*31]  /* regs.sp_el1 */
-    msr     sp_el1,   x20
-    ldr     x20, [x19, #8*32]  /* regs.elr_el2 
-                                    (the incremented val!) */
-    msr     elr_el2,  x20
-    ldr     x20, [x19, #8*33]  /* regs.spsr_el2 */
-    msr     spsr_el2, x20
+    ldp     x18, x19, [x19, #(16 * 9)]
+    ldp     x20, x21, [x19, #(16 * 10)]
+    ldp     x22, x23, [x19, #(16 * 11)]
+    ldp     x24, x25, [x19, #(16 * 12)]
+    ldp     x26, x27, [x19, #(16 * 13)]
+    ldp     x28, x29, [x19, #(16 * 14)]
+    ldr     x30,      [x19, #(8 * 30)]
+    ##
+    ## restore special regs (and the vals 
+    ##          should be modified by handler)
+    ##
+    ldr     x20, [x19, #(8 * 31)]
+    msr     sp_el1,    x20
+    ldr     x20, [x19, #(8 * 32)]
+    msr     elr_el2,   x20
+    ldr     x20, [x19, #(8 * 33)]
+    msr     spsr_el2,  x20
 
     eret
 
-    ##
-    ## lower el using aarch64: IRQ, FIQ, SError
-    ##
+    .align 7; b .; /* lower el using aarch64:  IRQ, FIQ, SError  */
     .align 7; b .;
     .align 7; b .;
-    .align 7; b .;
-    ##
-    ## lower el using aarch32: sync, IRQ, FIQ, SError
-    ## unused
-    ##
-    .align 7; b .;
+    .align 7; b .; /* lower el using aarch32:  unused            */
     .align 7; b .;
     .align 7; b .;
     .align 7; b .;

@@ -1,4 +1,3 @@
-#pragma once
 #ifndef   __VH_H__
 #define   __VH_H__
 
