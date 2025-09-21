@@ -36,7 +36,7 @@ clean:
 
 run: all
 	qemu-system-aarch64 \
-	    -machine virt,virtualization=on \
+	    -machine virt,virtualization=on,secure=off \
 	    -cpu cortex-a57 \
 	    -m 6144 \
 	    -nographic \
