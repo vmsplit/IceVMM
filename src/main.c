@@ -2,28 +2,35 @@
 #include <stddef.h>
 #include "vm.h"
 
+
 /* linker exports */
 extern char _guest_payload[];
 extern char __exception_vectors[];
+
 
 /* global VM obj */
 // referenced by symbol name in exception.S
 vm_t guest_vm;
 
+
 /* UART */
 #define UART0_DR    (*(volatile uint32_t*)0x09000000)
-static void uart_putc(char c) {
+static void uart_putc(char c) 
+{
     if (c == '\n') UART0_DR = '\r';
     UART0_DR = c;
 }
-static void uart_puts(const char *s) {
+static void uart_puts(const char *s) 
+{
     while (*s) uart_putc(*s++);
 }
-static void uart_put_hex(uint64_t n) {
+static void uart_put_hex(uint64_t n) 
+{
     static const char hexdigits[] = "0123456789abcdef";
     uart_puts("0x");
     for (int i = 60; i >= 0; i -= 4) uart_putc(hexdigits[(n >> i) & 0xf]);
 }
+
 
 /* asm func prototypes */
 void hang(void);
@@ -42,6 +49,7 @@ void __write_vtcr_el2(uint64_t val);
 uint64_t __read_sctlr_el2(void);
 //  tlb stuff
 void __tlbi_vmalle1(void);  /* flush TLB*/
+
 
 /* stage 1 MMU for hypv */
 #define S1_PTE_VALID        (1UL << 0)
@@ -63,14 +71,25 @@ void __tlbi_vmalle1(void);  /* flush TLB*/
 #define S1_SCTLR_C          (1UL << 2)
 #define S1_SCTLR_I          (1UL << 12)
 
+
 static uint64_t __attribute__((aligned(4096))) s1_l1_tbl[512];
 
-static void s1_mmu_init(void) {
-    s1_l1_tbl[0] = 0x00000000 | S1_PTE_VALID | S1_PTE_BLOCK | S1_PTE_MEM_ATTR(0) | S1_PTE_AP_RW_EL2 | S1_PTE_SH_IS | S1_PTE_AF;
-    s1_l1_tbl[1] = 0x40000000 | S1_PTE_VALID | S1_PTE_BLOCK | S1_PTE_MEM_ATTR(1) | S1_PTE_AP_RW_EL2 | S1_PTE_SH_IS | S1_PTE_AF;
+
+static void s1_mmu_init(void) 
+{
+    s1_l1_tbl[0] = 0x00000000 | S1_PTE_VALID     | S1_PTE_BLOCK |
+           S1_PTE_MEM_ATTR(0) | S1_PTE_AP_RW_EL2 | S1_PTE_SH_IS | 
+           S1_PTE_AF;
+
+    s1_l1_tbl[1] = 0x40000000 | S1_PTE_VALID     | S1_PTE_BLOCK | 
+           S1_PTE_MEM_ATTR(1) | S1_PTE_AP_RW_EL2 | S1_PTE_SH_IS | 
+           S1_PTE_AF;
+
     uint64_t __mair = (S1_MAIR_ATTR1_NORM << 8) | S1_MAIR_ATTR0_DEV;
     __asm__ volatile("msr mair_el2, %0" : : "r"(__mair));
-    uint64_t __tcr = S1_TCR_T0SZ(25) | S1_TCR_PS_40_BIT | S1_TCR_TG0_4K | S1_TCR_SH0_IS | S1_TCR_ORGN0_WB | S1_TCR_IRGN0_WB;
+
+    uint64_t __tcr = S1_TCR_T0SZ(25) | S1_TCR_PS_40_BIT | S1_TCR_TG0_4K | 
+                     S1_TCR_SH0_IS   | S1_TCR_ORGN0_WB  | S1_TCR_IRGN0_WB;
     __write_tcr_el2(__tcr);
     __write_ttbr0_el2((uint64_t)s1_l1_tbl);
     __asm__ volatile("isb");
@@ -79,6 +98,7 @@ static void s1_mmu_init(void) {
     __write_sctlr_el2(__sctlr);
     __asm__ volatile("isb");
 }
+
 
 /* stage 2 MMU for guest */
 #define S2_PTE_VALID        (1UL << 0)
@@ -97,9 +117,12 @@ static void s1_mmu_init(void) {
 #define S2_VTCR_ORGN0_WB    (1UL << 10)
 #define S2_VTCR_IRGN0_WB    (1UL << 8)
 
+
 static uint64_t __attribute__((aligned(4096))) s2_l1_tbl[512];
 
-static void s2_mmu_init(void) {
+
+static void s2_mmu_init(void) 
+{
     // identity map the first 2GiB for guest
     //      GPA 0x00000000 -> PA 0x00000000 (device, for UART)
     //      GPA 0x40000000 -> PA 0x40000000 (normal, for code)
@@ -115,7 +138,8 @@ static void s2_mmu_init(void) {
     __tlbi_vmalle1();
 }
 
-// ARMv8 ESR_EL2 Exception Class values of interest
+
+/* ESR_EL2 EC values we care about */
 #define ESR_EC_UNKNOWN        0x00
 #define ESR_EC_WFI_WFE        0x01
 #define ESR_EC_SVC64          0x15
@@ -125,7 +149,9 @@ static void s2_mmu_init(void) {
 #define ESR_EC_INST_ABORT     0x20
 #define ESR_EC_DATA_ABORT     0x24
 
-static const char *esr_ec_str(uint32_t ec) {
+
+static const char *esr_ec_str(uint32_t ec) 
+{
     switch (ec) {
     case ESR_EC_UNKNOWN:     return "Unknown";
     case ESR_EC_WFI_WFE:     return "WFI/WFE";
@@ -139,8 +165,10 @@ static const char *esr_ec_str(uint32_t ec) {
     }
 }
 
+
 /* trap handling */
-static void trap_dump(uint64_t esr) {
+static void trap_dump(uint64_t esr) 
+{
     uint32_t ec  = (esr >> 26) & 0x3f;
     uint32_t iss = esr & 0x01ffffff;
     uart_puts("  reason: ");
@@ -159,7 +187,9 @@ static void trap_dump(uint64_t esr) {
     }
 }
 
-void handle_trap(vcpu_t *vcpu) {
+
+void handle_trap(vcpu_t *vcpu) 
+{
     uint64_t esr;
     __asm__ volatile("mrs %0, esr_el2" : "=r"(esr));
     uint32_t ec = (esr >> 26) & 0x3f;
@@ -192,9 +222,11 @@ void handle_trap(vcpu_t *vcpu) {
     hang();
 }
 
+
 /* vm setup */
 #define HCR_EL2_RW_BIT (1UL << 31)
-void vm_create(void) {
+void vm_create(void) 
+{
     /* set guest entrypoint to payload linked in hypv bin */
     guest_vm.vcpu.regs.elr_el2 = (uint64_t) &_guest_payload;
 
@@ -203,11 +235,13 @@ void vm_create(void) {
 
     /* set SPSR: EL1h (run in el1, use SP_el1),
        mask all interrupts */
-    guest_vm.vcpu.regs.spsr_el2 = (0x5); // PSTATE.M[4:0] = 0b00101
+    guest_vm.vcpu.regs.spsr_el2 = (0x5);    /* PSTATE.M[4:0] = 0b00101 */
 }
 
-/* main */
-void main(void) {
+
+/* main hypv entrypoint */
+void main(void) 
+{
     uart_puts("\nicevmm: distant meows from baremetal aarch64 !!!\n");
 
     unsigned long el = get_el();
