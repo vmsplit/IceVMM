@@ -45,10 +45,20 @@ void __write_tcr_el2(uint64_t val);
 void __write_ttbr0_el2(uint64_t val);
 void __write_vttbr_el2(uint64_t val);
 void __write_vtcr_el2(uint64_t val);
+void __write_mair_el2(uint64_t val);
 //  reads
 uint64_t __read_sctlr_el2(void);
+uint64_t __read_esr_el2(void);
+uint64_t __read_far_el2(void);
 //  tlb stuff
 void __tlbi_vmalle1(void);  /* flush TLB*/
+//  GICv3 and timer reg prototypes
+void __write_icc_eoir1_el1(uint64_t val);
+void __write_icc_sre_el2(uint64_t val);
+void __write_ich_hcr_el2(uint64_t val);
+void __write_ich_lr0_el2(uint64_t val);
+void __write_cntp_ctl_el0(uint64_t val);
+void __write_cntp_cval_el0(uint64_t val);
 
 
 /* stage 1 MMU for hypv */
@@ -86,12 +96,12 @@ static void s1_mmu_init(void)
            S1_PTE_AF;
 
     uint64_t __mair = (S1_MAIR_ATTR1_NORM << 8) | S1_MAIR_ATTR0_DEV;
-    __asm__ volatile("msr mair_el2, %0" : : "r"(__mair));
+    __write_mair_el2(__mair);
 
     uint64_t __tcr = S1_TCR_T0SZ(25) | S1_TCR_PS_40_BIT | S1_TCR_TG0_4K | 
                      S1_TCR_SH0_IS   | S1_TCR_ORGN0_WB  | S1_TCR_IRGN0_WB;
     __write_tcr_el2(__tcr);
-    __write_ttbr0_el2((uint64_t)s1_l1_tbl);
+    __write_ttbr0_el2((uint64_t) s1_l1_tbl);
     __asm__ volatile("isb");
     uint64_t __sctlr = __read_sctlr_el2();
     __sctlr |= S1_SCTLR_M | S1_SCTLR_I | S1_SCTLR_C;
@@ -120,14 +130,15 @@ static void s1_mmu_init(void)
 
 static uint64_t __attribute__((aligned(4096))) s2_l1_tbl[512];
 
-
 static void s2_mmu_init(void) 
 {
     // identity map the first 2GiB for guest
     //      GPA 0x00000000 -> PA 0x00000000 (device, for UART)
     //      GPA 0x40000000 -> PA 0x40000000 (normal, for code)
-    s2_l1_tbl[0] = 0x00000000 | S2_PTE_VALID | S2_PTE_BLOCK | S2_PTE_MEM_ATTR(0)
-                              | S2_PTE_AP_RW | S2_PTE_SH_IS | S2_PTE_AF;
+    // s2_l1_tbl[0] = 0x00000000 | S2_PTE_VALID | S2_PTE_BLOCK | S2_PTE_MEM_ATTR(0)
+    //                           | S2_PTE_AP_RW | S2_PTE_SH_IS | S2_PTE_AF;
+    // unmap first entry for now
+    s2_l1_tbl[0] = 0;
     s2_l1_tbl[1] = 0x40000000 | S2_PTE_VALID | S2_PTE_BLOCK | S2_PTE_MEM_ATTR(1)
                               | S2_PTE_AP_RW | S2_PTE_SH_IS | S2_PTE_AF;
 
@@ -146,7 +157,7 @@ static void s2_mmu_init(void)
 #define ESR_EC_HVC64          0x16
 #define ESR_EC_SMC64          0x17
 #define ESR_EC_SYSREG         0x18
-#define ESR_EC_INST_ABORT     0x20
+#define ESR_EC_INSTR_ABORT    0x20
 #define ESR_EC_DATA_ABORT     0x24
 
 
@@ -159,7 +170,7 @@ static const char *esr_ec_str(uint32_t ec)
     case ESR_EC_HVC64:       return "HVC (AArch64)";
     case ESR_EC_SMC64:       return "SMC (AArch64)";
     case ESR_EC_SYSREG:      return "MSR/MRS (sysreg)";
-    case ESR_EC_INST_ABORT:  return "Instruction Abort (EL1)";
+    case ESR_EC_INSTR_ABORT:  return "Instruction Abort (EL1)";
     case ESR_EC_DATA_ABORT:  return "Data Abort (EL1)";
     default:                 return "Unhandled/Unknown EC";
     }
@@ -167,55 +178,88 @@ static const char *esr_ec_str(uint32_t ec)
 
 
 /* trap handling */
-static void trap_dump(uint64_t esr) 
+static void trap_dump(uint64_t __esr) 
 {
-    uint32_t ec  = (esr >> 26) & 0x3f;
-    uint32_t iss = esr & 0x01ffffff;
+    uint32_t ec  = (__esr >> 26) & 0x3f;
+    uint32_t iss = __esr & 0x01ffffff;
     uart_puts("  reason: ");
     uart_puts(esr_ec_str(ec));
-    uart_puts("\n  EC: 0x");
+    uart_puts("\n  EC[0x");
     uart_put_hex(ec);
-    uart_puts("\n  ISS: 0x");
+    uart_puts("]\n  ISS[0x");
     uart_put_hex(iss);
-    uart_puts("\n");
-    if (ec == ESR_EC_DATA_ABORT || ec == ESR_EC_INST_ABORT) {
-        uint64_t far;
-        __asm__ volatile("mrs %0, far_el2" : "=r"(far));
-        uart_puts("  FAR_EL2: 0x");
-        uart_put_hex(far);
-        uart_puts("\n");
+    uart_puts("]\n");
+    if (ec == ESR_EC_DATA_ABORT || ec == ESR_EC_INSTR_ABORT) {
+        uint64_t __far = __read_far_el2();
+        uart_puts("  FAR_EL2[0x");
+        uart_put_hex(__far);
+        uart_puts("]\n");
     }
+}
+
+void handle_mmio(vcpu_t *vcpu)   __attribute__((general-regs-only));
+void handle_sysreg(vcpu_t *vcpu) __attribute__((general-regs-only));
+void handle_trap(vcpu_t *vcpu)   __attribute__((general-regs-only));
+
+
+static void handle_mmio(vcpu_t *vcpu)
+{
+    uint64_t __esr = __read_esr_el2();
+    uint64_t __far = __read_far_el2();
+    uint32_t rt  = (__esr >> 5) & 0x1f;
+    int is_write = (__esr & (1 << 6));
+    
+    if (__far == 0x09000000) {
+            if (is_write) {
+                    uart_putc((char) vcpu->regs.x[rt]);
+            }
+            else {
+                    vcpu->regs.x[rt] = 0;
+            }
+        vcpu->regs.elr_el2 += 4;
+        return;
+    }
+    else {
+        uart_puts("icevmm: unhandled MMIO access for ");
+        uart_put_hex(__far);
+        uart_puts("\n");
+        hang();
+    }
+    vcpu->regs.elr_el2 += 4;
 }
 
 
 void handle_trap(vcpu_t *vcpu) 
 {
-    uint64_t esr;
-    __asm__ volatile("mrs %0, esr_el2" : "=r"(esr));
-    uint32_t ec = (esr >> 26) & 0x3f;
+    uint64_t __esr = __read_esr_el2();
+    uint32_t ec = (__esr >> 26) & 0x3f;
 
     uart_puts("icevmm: trap:\n");
     uart_puts("  ESR_EL2[");
-    uart_put_hex(esr);
+    uart_put_hex(__esr);
     uart_puts("]\n");
 
-    trap_dump(esr);
+    trap_dump(__esr);
 
     /* 0x16 HVC from aarch64 */
     if (ec == ESR_EC_HVC64) {
-        uart_puts("icevmm: guest called HVC (handled)\n");
-        vcpu->regs.elr_el2 += 4;    /* move past HVC instr */
-        return;
+            uart_puts("icevmm: guest called HVC (handled)\n");
+            vcpu->regs.elr_el2 += 4;    /* move past HVC instr */
+            return;
     }
-
-    if (ec == ESR_EC_SYSREG) {
-        uart_puts("icevmm: sysreg trap (not implemented)\n");
-        hang();
+    else if (ec == ESR_EC_INSTR_ABORT) {
+            handle_mmio(vcpu);
     }
-
-    if (ec == ESR_EC_INST_ABORT || ec == ESR_EC_DATA_ABORT) {
-        uart_puts("icevmm: abort (not implemented)\n");
-        hang();
+    else if (ec == ESR_EC_DATA_ABORT) {
+            uint64_t __far = __read_far_el2();
+            if (__far == 0x09000000) {
+                    handle_mmio(vcpu);
+                    return;
+            }
+    }
+    else if (ec == ESR_EC_SYSREG) {
+            uart_puts("icevmm: sysreg trap (not implemented)\n");
+            hang();
     }
 
     uart_puts("icevmm: unhandled EC\n");
@@ -238,7 +282,10 @@ void vm_create(void)
     guest_vm.vcpu.regs.spsr_el2 = (0x5);    /* PSTATE.M[4:0] = 0b00101 */
 }
 
-
+#define HCR_EL2_RW   (1UL << 31) 
+#define HCR_EL2_VM   (1UL << 0)
+#define HCR_EL2_IMO  (1UL << 4)
+#define HCR_EL2_DEFAULT (HCR_EL2_VM | HCR_EL2_RW | HCR_EL2_IMO)
 /* main hypv entrypoint */
 void main(void) 
 {
@@ -250,7 +297,7 @@ void main(void)
 
     /* cfg hypv controls */
     __write_vbar_el2((uint64_t)&__exception_vectors);
-    __write_hcr_el2(HCR_EL2_RW_BIT);
+    __write_hcr_el2(HCR_EL2_DEFAULT);
     __write_cptr_el2(0); /* disable simd/fp traps to el2 */
 
     /* setup & enable stage 1 MMU for hypv */

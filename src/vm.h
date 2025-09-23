@@ -11,6 +11,9 @@ typedef struct _vcpu_regs_t {
     uint64_t elr_el2;
     /* SPSR(Saved Program Status Reg) */
     uint64_t spsr_el2;
+
+    uint64_t vtimer_ctl;
+    uint64_t vtimer_cval;
 } vcpu_regs_t;
 
 typedef struct _vcpu {

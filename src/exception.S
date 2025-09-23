@@ -1,5 +1,7 @@
 .section ".text.exceptions"
 .global __exception_vectors
+.global c_irq_handler
+.global handle_trap
 
 ##
 ## vector table has to be 
@@ -17,7 +19,21 @@ __exception_vectors:
     .align 7; b .;  /* current EL with SPx:  FIQ    */
     .align 7; b .;  /* current EL with SPx:  SError */
 
-    .align 7
+    /* exception from lower EL (AArch64), sync */
+    .align 7; b __lower_el_sync_handler
+
+    /* irq from lower EL (AArch64)             */
+    .align 7; b c_irq_handler
+
+    .align 7; b .;
+    .align 7; b .;
+
+    .align 7; b .;
+    .align 7; b .;
+    .align 7; b .;
+    .align 7; b .;
+
+.global __lower_el_sync_handler
 __lower_el_sync_handler:
     ##
     ## a hardware trap from lower EL doesn't pass args in regs so we must
@@ -97,11 +113,3 @@ __lower_el_sync_handler:
     msr     spsr_el2,  x20
 
     eret
-
-    .align 7; b .; /* lower el using aarch64:  IRQ, FIQ, SError  */
-    .align 7; b .;
-    .align 7; b .;
-    .align 7; b .; /* lower el using aarch32:  unused            */
-    .align 7; b .;
-    .align 7; b .;
-    .align 7; b .;
