@@ -15,16 +15,16 @@ vm_t guest_vm;
 
 /* UART */
 #define UART0_DR    (*(volatile uint32_t*)0x09000000)
-static void uart_putc(char c) 
+static void uart_putc(char c)
 {
     if (c == '\n') UART0_DR = '\r';
     UART0_DR = c;
 }
-static void uart_puts(const char *s) 
+static void uart_puts(const char *s)
 {
     while (*s) uart_putc(*s++);
 }
-static void uart_put_hex(uint64_t n) 
+static void uart_put_hex(uint64_t n)
 {
     static const char hexdigits[] = "0123456789abcdef";
     uart_puts("0x");
@@ -52,13 +52,6 @@ uint64_t __read_esr_el2(void);
 uint64_t __read_far_el2(void);
 //  tlb stuff
 void __tlbi_vmalle1(void);  /* flush TLB*/
-//  GICv3 and timer reg prototypes
-void __write_icc_eoir1_el1(uint64_t val);
-void __write_icc_sre_el2(uint64_t val);
-void __write_ich_hcr_el2(uint64_t val);
-void __write_ich_lr0_el2(uint64_t val);
-void __write_cntp_ctl_el0(uint64_t val);
-void __write_cntp_cval_el0(uint64_t val);
 
 
 /* stage 1 MMU for hypv */
@@ -85,20 +78,20 @@ void __write_cntp_cval_el0(uint64_t val);
 static uint64_t __attribute__((aligned(4096))) s1_l1_tbl[512];
 
 
-static void s1_mmu_init(void) 
+static void s1_mmu_init(void)
 {
     s1_l1_tbl[0] = 0x00000000 | S1_PTE_VALID     | S1_PTE_BLOCK |
-           S1_PTE_MEM_ATTR(0) | S1_PTE_AP_RW_EL2 | S1_PTE_SH_IS | 
+           S1_PTE_MEM_ATTR(0) | S1_PTE_AP_RW_EL2 | S1_PTE_SH_IS |
            S1_PTE_AF;
 
-    s1_l1_tbl[1] = 0x40000000 | S1_PTE_VALID     | S1_PTE_BLOCK | 
-           S1_PTE_MEM_ATTR(1) | S1_PTE_AP_RW_EL2 | S1_PTE_SH_IS | 
+    s1_l1_tbl[1] = 0x40000000 | S1_PTE_VALID     | S1_PTE_BLOCK |
+           S1_PTE_MEM_ATTR(1) | S1_PTE_AP_RW_EL2 | S1_PTE_SH_IS |
            S1_PTE_AF;
 
     uint64_t __mair = (S1_MAIR_ATTR1_NORM << 8) | S1_MAIR_ATTR0_DEV;
     __write_mair_el2(__mair);
 
-    uint64_t __tcr = S1_TCR_T0SZ(25) | S1_TCR_PS_40_BIT | S1_TCR_TG0_4K | 
+    uint64_t __tcr = S1_TCR_T0SZ(25) | S1_TCR_PS_40_BIT | S1_TCR_TG0_4K |
                      S1_TCR_SH0_IS   | S1_TCR_ORGN0_WB  | S1_TCR_IRGN0_WB;
     __write_tcr_el2(__tcr);
     __write_ttbr0_el2((uint64_t) s1_l1_tbl);
@@ -130,17 +123,36 @@ static void s1_mmu_init(void)
 
 static uint64_t __attribute__((aligned(4096))) s2_l1_tbl[512];
 
-static void s2_mmu_init(void) 
+static void s2_mmu_init(vm_t *vm)
 {
+    /* clear s2 PT  */
+    for (int i = 0; i < 512; i++) {
+            s2_l1_tbl[i] = 0;
+    }
+
+    /* map mem regs for vm  */
+    for (int i = 0; i < vm->num_mem_regs; i++) {
+        mem_reg_t *region = &vm->mem_regs[i];
+        uint64_t ipa  = region->ipa;
+        uint64_t pa   = region->pa;
+        uint64_t size = region->size;
+        uint64_t attribs = region->attribs;
+
+        /* for now use 1GB block mappings &
+           assume ipa, pa, and size are 1GB aligned */
+        uint64_t l1_idx = ipa >> 30;
+        s2_l1_tbl[l1_idx] = pa | S2_PTE_VALID | S2_PTE_BLOCK | attribs;
+    }
+
     // identity map the first 2GiB for guest
     //      GPA 0x00000000 -> PA 0x00000000 (device, for UART)
     //      GPA 0x40000000 -> PA 0x40000000 (normal, for code)
     // s2_l1_tbl[0] = 0x00000000 | S2_PTE_VALID | S2_PTE_BLOCK | S2_PTE_MEM_ATTR(0)
     //                           | S2_PTE_AP_RW | S2_PTE_SH_IS | S2_PTE_AF;
     // unmap first entry for now
-    s2_l1_tbl[0] = 0;
-    s2_l1_tbl[1] = 0x40000000 | S2_PTE_VALID | S2_PTE_BLOCK | S2_PTE_MEM_ATTR(1)
-                              | S2_PTE_AP_RW | S2_PTE_SH_IS | S2_PTE_AF;
+    // s2_l1_tbl[0] = 0;
+    // s2_l1_tbl[1] = 0x40000000 | S2_PTE_VALID | S2_PTE_BLOCK | S2_PTE_MEM_ATTR(1)
+    //                           | S2_PTE_AP_RW | S2_PTE_SH_IS | S2_PTE_AF;
 
     uint64_t __vtcr = S2_VTCR_T0SZ(25) | S2_VTCR_PS_40_BIT | S2_VTCR_TG0_4K |
                       S2_VTCR_SL0(1)   | S2_VTCR_ORGN0_WB  | S2_VTCR_IRGN0_WB;
@@ -161,7 +173,7 @@ static void s2_mmu_init(void)
 #define ESR_EC_DATA_ABORT     0x24
 
 
-static const char *esr_ec_str(uint32_t ec) 
+static const char *esr_ec_str(uint32_t ec)
 {
     switch (ec) {
     case ESR_EC_UNKNOWN:     return "Unknown";
@@ -178,7 +190,7 @@ static const char *esr_ec_str(uint32_t ec)
 
 
 /* trap handling */
-static void trap_dump(uint64_t __esr) 
+static void trap_dump(uint64_t __esr)
 {
     uint32_t ec  = (__esr >> 26) & 0x3f;
     uint32_t iss = __esr & 0x01ffffff;
@@ -197,9 +209,8 @@ static void trap_dump(uint64_t __esr)
     }
 }
 
-void handle_mmio(vcpu_t *vcpu)   __attribute__((general-regs-only));
-void handle_sysreg(vcpu_t *vcpu) __attribute__((general-regs-only));
-void handle_trap(vcpu_t *vcpu)   __attribute__((general-regs-only));
+static void handle_mmio(vcpu_t *vcpu);
+void handle_trap(vcpu_t *vcpu);
 
 
 static void handle_mmio(vcpu_t *vcpu)
@@ -208,7 +219,7 @@ static void handle_mmio(vcpu_t *vcpu)
     uint64_t __far = __read_far_el2();
     uint32_t rt  = (__esr >> 5) & 0x1f;
     int is_write = (__esr & (1 << 6));
-    
+
     if (__far == 0x09000000) {
             if (is_write) {
                     uart_putc((char) vcpu->regs.x[rt]);
@@ -229,7 +240,7 @@ static void handle_mmio(vcpu_t *vcpu)
 }
 
 
-void handle_trap(vcpu_t *vcpu) 
+void handle_trap(vcpu_t *vcpu)
 {
     uint64_t __esr = __read_esr_el2();
     uint32_t ec = (__esr >> 26) & 0x3f;
@@ -269,8 +280,12 @@ void handle_trap(vcpu_t *vcpu)
 
 /* vm setup */
 #define HCR_EL2_RW_BIT (1UL << 31)
-void vm_create(void) 
+void vm_create(void)
 {
+    guest_vm.num_mem_regs = 2;
+
+
+
     /* set guest entrypoint to payload linked in hypv bin */
     guest_vm.vcpu.regs.elr_el2 = (uint64_t) &_guest_payload;
 
@@ -282,12 +297,12 @@ void vm_create(void)
     guest_vm.vcpu.regs.spsr_el2 = (0x5);    /* PSTATE.M[4:0] = 0b00101 */
 }
 
-#define HCR_EL2_RW   (1UL << 31) 
+#define HCR_EL2_RW   (1UL << 31)
 #define HCR_EL2_VM   (1UL << 0)
 #define HCR_EL2_IMO  (1UL << 4)
 #define HCR_EL2_DEFAULT (HCR_EL2_VM | HCR_EL2_RW | HCR_EL2_IMO)
 /* main hypv entrypoint */
-void main(void) 
+void main(void)
 {
     uart_puts("\nicevmm: distant meows from baremetal aarch64 !!!\n");
 

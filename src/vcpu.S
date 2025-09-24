@@ -4,7 +4,7 @@
 vcpu_run:
     ##
     ## x0 holds the ptr to the vcpu struct
-    ## save hypv ctx (callee-saved registers 
+    ## save hypv ctx (callee-saved registers
     ##                & link register)
     ##
     stp     x19, x20, [sp, #-16]!

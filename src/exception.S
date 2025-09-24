@@ -1,10 +1,9 @@
 .section ".text.exceptions"
 .global __exception_vectors
-.global c_irq_handler
 .global handle_trap
 
 ##
-## vector table has to be 
+## vector table has to be
 ## 2048-byte 0x800 aligned
 ##
 .align 11
@@ -23,7 +22,7 @@ __exception_vectors:
     .align 7; b __lower_el_sync_handler
 
     /* irq from lower EL (AArch64)             */
-    .align 7; b c_irq_handler
+    .align 7; b .;
 
     .align 7; b .;
     .align 7; b .;
@@ -102,7 +101,7 @@ __lower_el_sync_handler:
     ldp     x28, x29, [x19, #(16 * 14)]
     ldr     x30,      [x19, #(8 * 30)]
     ##
-    ## restore special regs (and the vals 
+    ## restore special regs (and the vals
     ##          should be modified by handler)
     ##
     ldr     x20, [x19, #(8 * 31)]
