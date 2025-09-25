@@ -1,61 +1,102 @@
-.section ".text"
+#include "asm_utils.h"
+
+.extern handle_trap
+.extern handle_irq
+
+.macro save_regs
+    sub     sp, sp, #(34 * 8)
+    stp     x0, x1, [sp, #(0 * 16)]
+    stp     x2, x3, [sp, #(1 * 16)]
+    stp     x4, x5, [sp, #(2 * 16)]
+    stp     x6, x7, [sp, #(3 * 16)]
+    stp     x8, x9, [sp, #(4 * 16)]
+    stp     x10, x11, [sp, #(5 * 16)]
+    stp     x12, x13, [sp, #(6 * 16)]
+    stp     x14, x15, [sp, #(7 * 16)]
+    stp     x16, x17, [sp, #(8 * 16)]
+    stp     x18, x19, [sp, #(9 * 16)]
+    stp     x20, x21, [sp, #(10 * 16)]
+    stp     x22, x23, [sp, #(11 * 16)]
+    stp     x24, x25, [sp, #(12 * 16)]
+    stp     x26, x27, [sp, #(13 * 16)]
+    stp     x28, x29, [sp, #(14 * 16)]
+    str     x30, [sp, #(15 * 16)]
+    mrs     x0, sp_el1
+    mrs     x1, elr_el2
+    mrs     x2, spsr_el2
+    stp     x0, x1, [sp, #(16 * 16)]
+    str     x2, [sp, #(17 * 16)]
+.endm
+
+.macro restore_regs
+    ldp     x0, x1, [sp, #(16 * 16)]
+    ldr     x2, [sp, #(17 * 16)]
+    msr     sp_el1, x0
+    msr     elr_el2, x1
+    msr     spsr_el2, x2
+    ldp     x0, x1, [sp, #(0 * 16)]
+    ldp     x2, x3, [sp, #(1 * 16)]
+    ldp     x4, x5, [sp, #(2 * 16)]
+    ldp     x6, x7, [sp, #(3 * 16)]
+    ldp     x8, x9, [sp, #(4 * 16)]
+    ldp     x10, x11, [sp, #(5 * 16)]
+    ldp     x12, x13, [sp, #(6 * 16)]
+    ldp     x14, x15, [sp, #(7 * 16)]
+    ldp     x16, x17, [sp, #(8 * 16)]
+    ldp     x18, x19, [sp, #(9 * 16)]
+    ldp     x20, x21, [sp, #(10 * 16)]
+    ldp     x22, x23, [sp, #(11 * 16)]
+    ldp     x24, x25, [sp, #(12 * 16)]
+    ldp     x26, x27, [sp, #(13 * 16)]
+    ldp     x28, x29, [sp, #(14 * 16)]
+    ldr     x30, [sp, #(15 * 16)]
+    add     sp, sp, #(34 * 8)
+.endm
+
+
+.globl __lower_el_sync_handler
+__lower_el_sync_handler:
+    save_regs
+    mov     x0, sp
+    bl      handle_trap
+    restore_regs
+    eret
+
+.globl __lower_el_irq_handler
+__lower_el_irq_handler:
+    save_regs
+    mov     x0, sp
+    bl      handle_irq
+    // handle_irq -> sched -> vcpu_run does not return here
+    // the context for the *next* vcpu is restored by vcpu_run
+    b       .
 
 .globl vcpu_run
 vcpu_run:
-    ##
-    ## x0 holds the ptr to the vcpu struct
-    ## save hypv ctx (callee-saved registers
-    ##                & link register)
-    ##
-    stp     x19, x20, [sp, #-16]!
-    stp     x21, x22, [sp, #-16]!
-    stp     x23, x24, [sp, #-16]!
-    stp     x25, x26, [sp, #-16]!
-    stp     x27, x28, [sp, #-16]!
-    stp     x29, x30, [sp, #-16]!
+    ldr     x1, [x0, #8]
+    ldp     x0, x1, [x0, #0]
+    ldp     x2, x3, [x0, #(1 * 16)]
+    ldp     x4, x5, [x0, #(2 * 16)]
+    ldp     x6, x7, [x0, #(3 * 16)]
+    ldp     x8, x9, [x0, #(4 * 16)]
+    ldp     x10, x11, [x0, #(5 * 16)]
+    ldp     x12, x13, [x0, #(6 * 16)]
+    ldp     x14, x15, [x0, #(7 * 16)]
+    ldp     x16, x17, [x0, #(8 * 16)]
+    ldp     x18, x19, [x0, #(9 * 16)]
+    ldp     x20, x21, [x0, #(10 * 16)]
+    ldp     x22, x23, [x0, #(11 * 16)]
+    ldp     x24, x25, [x0, #(12 * 16)]
+    ldp     x26, x27, [x0, #(13 * 16)]
+    ldp     x28, x29, [x0, #(14 * 16)]
+    ldr     x30, [x0, #(15 * 16)]
 
-    ##
-    ## the exception handler needs to know where the vcpu struct is
-    ## we pass it in x19 (callee-saved reg), but we gotta save the orig hypv x19
-    ## first...
-    ## it's already been saved to the stack, so the handler will use this same ptr
-    ##
-    mov     x19, x0
+    add     x0, x0, #(31 * 8)
+    ldp     x1, x2, [x0, #0]
+    ldr     x3, [x0, #16]
 
-    ##
-    ## restore guest's special regs
-    ##
-    ldp     x0,  x1,  [x19, #(16 * 0)]
-    ldp     x2,  x3,  [x19, #(16 * 1)]
-    ldp     x4,  x5,  [x19, #(16 * 2)]
-    ldp     x6,  x7,  [x19, #(16 * 3)]
-    ldp     x8,  x9,  [x19, #(16 * 4)]
-    ldp     x10, x11, [x19, #(16 * 5)]
-    ldp     x12, x13, [x19, #(16 * 6)]
-    ldp     x14, x15, [x19, #(16 * 7)]
-    ldp     x16, x17, [x19, #(16 * 8)]
-    ##
-    ## skip restoring x19 cuz it's our ctx ptr
-    ## guest's x19 will be restored right before eret
-    ##
-    ldp     x18, x20, [x19, #(16 * 9)]
-    ldp     x21, x22, [x19, #(16 * 10)]
-    ldp     x23, x24, [x19, #(16 * 11)]
-    ldp     x25, x26, [x19, #(16 * 12)]
-    ldp     x27, x28, [x19, #(16 * 13)]
-    ldp     x29, x30, [x19, #(16 * 14)]
+    msr     sp_el1, x1
+    msr     elr_el2, x2
+    msr     spsr_el2, x3
 
-    ##
-    ## restore special regs
-    ##
-    ldr     x21, [x19, #(8 * 31)]   // offset of sp_el1
-    msr     sp_el1, x21
-    ldr     x21, [x19, #(8 * 32)]   // offset of elr_el2
-    msr     elr_el2, x21
-    ldr     x21, [x19, #(8 * 33)]   // offset of spsr_el2
-    msr     spsr_el2, x21
-    ##
-    ## restore guest's x19 and drop into guest
-    ##
-    ldr     x19, [x19, #(8 * 19)]   // offset of    x[19]
     eret

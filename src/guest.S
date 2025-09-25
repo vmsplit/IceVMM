@@ -1,14 +1,18 @@
 .section ".rodata"
-.globl _guest_payload
+.global _guest_payload_start
+.global _guest_payload_end
 
-_guest_payload:
-    .word   0xd2800000      // mov x0,  #0
-    .word   0x580000a1      // ldr x1,  uart_addr_lit
-    .word   0x52800922      // mov w2,  #'G'
-    .word   0x39000022      // strb w2, [x1]
-    .word   0xd4000002      // hvc #0
-    .word   0x14000000      // b .
-uart_addr_lit:
-    .word   0x09000000      // UART addr lit
+_guest_payload_start:
+    // a very simple guest that prints 'G' to the UART forever
+    mov     x1, 0x09000000  // UART address
+loop:
+    mov     w0, #'G'
+    str     w0, [x1]        // write to UART
+    // simple delay loop
+    mov     x2, 0x1000000
+delay:
+    sub     x2, x2, #1
+    cbnz    x2, delay
+    b       loop
 
-.section ".text"
+_guest_payload_end:
