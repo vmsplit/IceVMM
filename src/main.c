@@ -284,13 +284,25 @@ void vm_create(void)
 {
     guest_vm.num_mem_regs = 2;
 
+    /* dev mem | uart mem region */
+    guest_vm.mem_regs[0].ipa  = 0x09000000;
+    guest_vm.mem_regs[0].pa   = 0x09000000;
+    guest_vm.mem_regs[0].size = 0x1000;
+    guest_vm.mem_regs[0].attribs = S2_PTE_MEM_ATTR(S2_MAIR_ATTR0_DEV) | S2_PTE_AP_RW |
+                                   S2_PTE_SH_IS | S2_PTE_AF;
 
+    /* normal mem | guest code/data region  */
+    guest_vm.mem_regs[1].ipa  = 0x40000000;
+    guest_vm.mem_regs[1].pa   = 0x40000000;
+    guest_vm.mem_regs[1].size = 0x10000000;
+    guest_vm.mem_regs[1].attribs = S2_PTE_MEM_ATTR(S2_MAIR_ATTR1_NORM) | S2_PTE_AP_RW |
+                                   S2_PTE_SH_IS | S2_PTE_AF;
 
-    /* set guest entrypoint to payload linked in hypv bin */
-    guest_vm.vcpu.regs.elr_el2 = (uint64_t) &_guest_payload;
+    // /* set guest entrypoint to payload linked in hypv bin */
+    // guest_vm.vcpu.regs.elr_el2 = (uint64_t) &_guest_payload;
 
-    /* setup guest stack ptr */
-    guest_vm.vcpu.regs.sp_el1 = 0x40080000;
+    // /* setup guest stack ptr */
+    // guest_vm.vcpu.regs.sp_el1 = 0x40080000;
 
     /* set SPSR: EL1h (run in el1, use SP_el1),
        mask all interrupts */
@@ -326,7 +338,7 @@ void main(void)
 
     /* setup & enable stage 2 MMU for guest */
     uart_puts("icevmm: enabling S2 MMU...\n");
-    s2_mmu_init();
+    s2_mmu_init(&guest_vm);
     uart_puts("icevmm: S2 MMU enabled !!!\n");
 
     /* launch guest */
