@@ -19,7 +19,7 @@ To at least *remediate* or mitigate such possibilties i'm demonstrating
 NOTE:
 
 This is a work in progress. I am at college doing college shit.
-In lieu of this i'll be doing offline development and when i've actually
+In lieu of actively pushing updates i'll be doing offline development and when i've actually
   got some shit done i'll push it.
 I wrote a paper a while back about this for Phrack 72 but I:
   1. missed the deadline
